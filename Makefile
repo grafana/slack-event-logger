@@ -2,7 +2,7 @@
 
 IMAGE_NAME ?= slack-loki-exporter
 IMAGE_PREFIX ?= us.gcr.io/kubernetes-dev
-IMAGE_TAG ?= 0.0.1
+IMAGE_TAG ?= 0.0.2
 
 build-dev: 
 	go build .
