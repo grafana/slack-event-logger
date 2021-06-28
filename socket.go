@@ -1,4 +1,4 @@
-package socket
+package main
 
 import (
 	"fmt"
@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/grafana/slack-event-logger/internal/clients"
 	log "github.com/sirupsen/logrus"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -22,7 +21,7 @@ func NewSocketMode() (*SocketMode, error) {
 		sc  = &SocketMode{}
 		err error
 	)
-	if sc.slackClient, err = clients.GetSlackClient(); err != nil {
+	if sc.slackClient, err = GetSlackClient(); err != nil {
 		return nil, err
 	}
 	return sc, nil
