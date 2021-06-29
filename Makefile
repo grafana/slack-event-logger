@@ -1,8 +1,8 @@
 .PHONY: build-dev build test push
 
-IMAGE_NAME ?= slack-loki-exporter
+IMAGE_NAME ?= slack-event-exporter
 IMAGE_PREFIX ?= us.gcr.io/kubernetes-dev
-IMAGE_TAG ?= 0.0.2
+IMAGE_TAG ?= 0.0.3
 
 build-dev: 
 	go build .

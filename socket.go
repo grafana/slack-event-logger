@@ -101,10 +101,10 @@ func (sc *SocketMode) Run() error {
 							"channel":      message.Channel,
 							"user":         message.User,
 							"messageTs":    message.TimeStamp,
-							"threadTs":     message.ThreadTimeStamp,
 							"messageEvent": "new",
 						})
 
+						threadTs := message.ThreadTimeStamp
 						if previous := message.PreviousMessage; previous != nil {
 							new := message.Message
 							logMessage = logMessage.WithFields(log.Fields{"user": previous.User, "messageId": previous.ClientMsgID})
@@ -114,7 +114,14 @@ func (sc *SocketMode) Run() error {
 								logMessage = logMessage.WithField("messageEvent", "edited")
 								text = new.Text
 							}
+						} else {
+							// If the thread timestamp is empty on a new message, this is a top level message
+							// This is essentially a thread without replies (at this point), we can set the threadTs
+							if threadTs == "" {
+								threadTs = message.TimeStamp
+							}
 						}
+						logMessage = logMessage.WithField("threadTs", threadTs)
 
 						logMessage.Info(text)
 
