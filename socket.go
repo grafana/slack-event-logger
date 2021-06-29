@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	log "github.com/sirupsen/logrus"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -15,6 +17,26 @@ import (
 type SocketMode struct {
 	slackClient *slack.Client
 }
+
+var (
+	slack_user_message_count = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "slack_user_message_count",
+			Help: "Number of messages a single User sent to a channel",
+		}, []string{"channel", "user"})
+
+	slack_thread_message_count = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "slack_thread_message_count",
+			Help: "Number of messages in a single thread in a channel",
+		}, []string{"channel", "threadTs"})
+
+	slack_message_reaction_count = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "slack_message_reaction_count",
+			Help: "Number of reactions on a single message",
+		}, []string{"channel", "messageTs"})
+)
 
 func NewSocketMode(config Config) (*SocketMode, error) {
 	var (
@@ -68,6 +90,10 @@ func (sc *SocketMode) Run() error {
 						if err != nil {
 							break
 						}
+
+						slack_message_reaction_count.
+							WithLabelValues(reactionAdded.Item.Channel, reactionAdded.Item.Timestamp).Inc()
+
 						logMessage.WithTime(timestamp).WithFields(log.Fields{
 							"channel":  reactionAdded.Item.Channel,
 							"user":     reactionAdded.User,
@@ -88,6 +114,9 @@ func (sc *SocketMode) Run() error {
 							"reaction": reactionRemoved.Reaction,
 						}).Info()
 
+						slack_message_reaction_count.
+							WithLabelValues(reactionRemoved.Item.Channel, reactionRemoved.Item.Timestamp).Dec()
+
 					case *slackevents.MessageEvent:
 						message := innerEvent.Data.(*slackevents.MessageEvent)
 						timestamp, err = parseTimestamp(string(message.EventTimeStamp))
@@ -98,21 +127,21 @@ func (sc *SocketMode) Run() error {
 						text := message.Text
 
 						logMessage = logMessage.WithTime(timestamp).WithFields(log.Fields{
-							"messageId":    message.ClientMsgID,
-							"channel":      message.Channel,
-							"user":         message.User,
-							"messageTs":    message.TimeStamp,
-							"messageEvent": "new",
+							"messageId": message.ClientMsgID,
+							"channel":   message.Channel,
+							"user":      message.User,
+							"messageTs": message.TimeStamp,
 						})
 
+						messageEvent := "new"
 						threadTs := message.ThreadTimeStamp
 						if previous := message.PreviousMessage; previous != nil {
 							new := message.Message
 							logMessage = logMessage.WithFields(log.Fields{"user": previous.User, "messageId": previous.ClientMsgID})
 							if new == nil || new.SubType == "tombstone" { // lol
-								logMessage = logMessage.WithField("messageEvent", "deleted")
+								messageEvent = "deleted"
 							} else {
-								logMessage = logMessage.WithField("messageEvent", "edited")
+								messageEvent = "edited"
 								text = new.Text
 							}
 						} else {
@@ -122,7 +151,25 @@ func (sc *SocketMode) Run() error {
 								threadTs = message.TimeStamp
 							}
 						}
+						logMessage = logMessage.WithField("messageEvent", messageEvent)
 						logMessage = logMessage.WithField("threadTs", threadTs)
+
+						switch messageEvent {
+						case "edited":
+							continue
+						case "deleted":
+							slack_user_message_count.
+								WithLabelValues(message.Channel, message.User).Dec()
+
+							slack_thread_message_count.
+								WithLabelValues(message.Channel, threadTs).Dec()
+						default:
+							slack_user_message_count.
+								WithLabelValues(message.Channel, message.User).Inc()
+
+							slack_thread_message_count.
+								WithLabelValues(message.Channel, threadTs).Inc()
+						}
 
 						logMessage.Info(text)
 
