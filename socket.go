@@ -51,7 +51,14 @@ var (
 			Help: "Information about the channel",
 		}, []string{"channel", "name"})
 
+	slack_user_info = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "slack_user_info",
+			Help: "Information about the channel",
+		}, []string{"user", "name", "nickname"})
+
 	channelNames map[string]string = map[string]string{}
+	userNames    map[string]string = map[string]string{}
 )
 
 func NewSocketMode(config Config) (*SocketMode, error) {
@@ -150,6 +157,16 @@ func (sc *SocketMode) Run() error {
 							channelNames[message.Channel] = channel.Name
 							slack_channel_info.
 								WithLabelValues(message.Channel, channel.Name).Set(1)
+						}
+
+						if userNames[message.User] == "" {
+							user, err := sc.slackClient.GetUserInfo(message.User)
+							if err != nil {
+								log.Errorln("Failed to get user info", err)
+							}
+							userNames[message.User] = user.Name
+							slack_user_info.
+								WithLabelValues(message.User, user.RealName, user.Name).Set(1)
 						}
 
 						text := message.Text
