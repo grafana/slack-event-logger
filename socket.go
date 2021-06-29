@@ -71,6 +71,8 @@ func (sc *SocketMode) Run() error {
 						if err != nil {
 							break
 						}
+						sc.addChannelToCache(reactionAdded.Item.Channel)
+						sc.addUserToCache(reactionAdded.User)
 
 						slack_message_reaction_count.
 							WithLabelValues(reactionAdded.Reaction, reactionAdded.User, reactionAdded.Item.Channel, reactionAdded.Item.Timestamp).Inc()
@@ -88,6 +90,9 @@ func (sc *SocketMode) Run() error {
 						if err != nil {
 							break
 						}
+						sc.addChannelToCache(reactionRemoved.Item.Channel)
+						sc.addUserToCache(reactionRemoved.User)
+
 						logMessage.WithTime(timestamp).WithFields(log.Fields{
 							"channel":  reactionRemoved.Item.Channel,
 							"user":     reactionRemoved.User,
@@ -104,26 +109,8 @@ func (sc *SocketMode) Run() error {
 						if err != nil {
 							break
 						}
-
-						if channelNames[message.Channel] == "" {
-							channel, err := sc.slackClient.GetConversationInfo(message.Channel, false)
-							if err != nil {
-								log.Errorf("Failed to get channel info for %s: %v", message.User, err)
-							}
-							channelNames[message.Channel] = channel.Name
-							slack_channel_info.
-								WithLabelValues(message.Channel, channel.Name).Set(1)
-						}
-
-						if message.User != "" && userNames[message.User] == "" {
-							user, err := sc.slackClient.GetUserInfo(message.User)
-							if err != nil {
-								log.Errorf("Failed to get user info for %s: %v", message.User, err)
-							}
-							userNames[message.User] = user.Profile.DisplayName
-							slack_user_info.
-								WithLabelValues(message.User, user.Name, user.RealName, user.Profile.DisplayName).Set(1)
-						}
+						sc.addChannelToCache(message.Channel)
+						sc.addUserToCache(message.User)
 
 						text := message.Text
 
@@ -207,6 +194,33 @@ func (sc *SocketMode) Run() error {
 	}()
 
 	return socketClient.Run()
+}
+
+func (sc *SocketMode) addChannelToCache(channelId string) {
+	if channelId == "" || channelNames[channelId] != "" {
+		return
+	}
+
+	channel, err := sc.slackClient.GetConversationInfo(channelId, false)
+	if err != nil {
+		log.Errorf("Failed to get channel info for %s: %v", channelId, err)
+	}
+	channelNames[channelId] = channel.Name
+	slack_channel_info.WithLabelValues(channelId, channel.Name).Set(1)
+}
+
+func (sc *SocketMode) addUserToCache(userId string) {
+	if userId == "" || userNames[userId] != "" {
+		return
+	}
+
+	user, err := sc.slackClient.GetUserInfo(userId)
+	if err != nil {
+		log.Errorf("Failed to get user info for %s: %v", userId, err)
+	}
+	userNames[userId] = user.Profile.DisplayName
+	slack_user_info.
+		WithLabelValues(userId, user.Name, user.RealName, user.Profile.DisplayName).Set(1)
 }
 
 func parseTimestamp(timestamp string) (time.Time, error) {
