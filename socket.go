@@ -38,6 +38,11 @@ var (
 			Name: "slack_message_reaction_count",
 			Help: "Number of reactions on a single message",
 		}, []string{"channel", "messageTs"})
+	slack_thread_seconds = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "slack_thread_seconds",
+			Help: "The amount of seconds between the first and last message of a thread",
+		}, []string{"threadTs"})
 )
 
 func NewSocketMode(config Config) (*SocketMode, error) {
@@ -153,6 +158,18 @@ func (sc *SocketMode) Run() error {
 							// This is essentially a thread without replies (at this point), we can set the threadTs
 							if threadTs == "" {
 								threadTs = message.TimeStamp
+							} else {
+								var start, end time.Time
+								start, err = parseTimestamp(threadTs)
+								if err != nil {
+									break
+								}
+								end, err = parseTimestamp(message.TimeStamp)
+								if err != nil {
+									break
+								}
+
+								slack_thread_seconds.WithLabelValues(threadTs).Set(end.Sub(start).Seconds())
 							}
 						}
 						logMessage = logMessage.WithField("messageEvent", messageEvent)
