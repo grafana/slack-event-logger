@@ -209,7 +209,7 @@ func (sc *SocketMode) Run() error {
 			}
 
 			if err != nil {
-				log.Error("Got an error while handling events: %v", err)
+				log.Errorf("Got an error while handling events: %v", err)
 			}
 		}
 	}()
