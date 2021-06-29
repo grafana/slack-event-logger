@@ -38,11 +38,20 @@ var (
 			Name: "slack_message_reaction_count",
 			Help: "Number of reactions on a single message",
 		}, []string{"channel", "messageTs"})
+
 	slack_thread_seconds = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "slack_thread_seconds",
 			Help: "The amount of seconds between the first and last message of a thread",
 		}, []string{"threadTs"})
+
+	slack_channel_info = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "slack_channel_info",
+			Help: "Information about the channel",
+		}, []string{"channel", "name"})
+
+	channelNames map[string]string
 )
 
 func NewSocketMode(config Config) (*SocketMode, error) {
@@ -131,6 +140,16 @@ func (sc *SocketMode) Run() error {
 						timestamp, err = parseTimestamp(string(message.EventTimeStamp))
 						if err != nil {
 							break
+						}
+
+						if channelNames[message.Channel] == "" {
+							channel, err := sc.slackClient.GetChannelInfo(message.Channel)
+							if err != nil {
+								log.Errorln("Failed to get channel info", err)
+							}
+							channelNames[message.Channel] = channel.Name
+							slack_channel_info.
+								WithLabelValues(message.Channel, channel.Name).Set(1)
 						}
 
 						text := message.Text
