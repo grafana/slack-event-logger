@@ -46,7 +46,7 @@ var (
 		prometheus.GaugeOpts{
 			Name: "slack_user_info",
 			Help: "Information about the channel",
-		}, []string{"user", "name", "nickname"})
+		}, []string{"user", "name", "realname", "displayname"})
 
 	channelNames map[string]string = map[string]string{}
 	userNames    map[string]string = map[string]string{}

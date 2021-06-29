@@ -122,7 +122,7 @@ func (sc *SocketMode) Run() error {
 							}
 							userNames[message.User] = user.Profile.DisplayName
 							slack_user_info.
-								WithLabelValues(message.User, user.RealName, user.Profile.DisplayName).Set(1)
+								WithLabelValues(message.User, user.Name, user.RealName, user.Profile.DisplayName).Set(1)
 						}
 
 						text := message.Text
