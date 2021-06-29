@@ -1,23 +1,23 @@
 package main
 
 import (
-	"os"
-
 	log "github.com/sirupsen/logrus"
 )
 
-const EnvLoggingFormat = "LOGGING_FORMAT"
-
 func main() {
-	if logFormat := os.Getenv(EnvLoggingFormat); logFormat == "logfmt" || logFormat == "" {
+	config, err := LoadConfig()
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+	if config.LoggingFormat == "logfmt" {
 		log.SetFormatter(&log.TextFormatter{})
-	} else if logFormat == "json" {
+	} else if config.LoggingFormat == "json" {
 		log.SetFormatter(&log.JSONFormatter{})
 	} else {
-		log.Fatalf("Invalid log format: %s", logFormat)
+		log.Fatalf("Invalid log format: %s", config.LoggingFormat)
 	}
 
-	socket, err := NewSocketMode()
+	socket, err := NewSocketMode(config)
 	if err != nil {
 		log.Fatalf("Failed to init: %v", err)
 	}

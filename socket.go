@@ -16,12 +16,12 @@ type SocketMode struct {
 	slackClient *slack.Client
 }
 
-func NewSocketMode() (*SocketMode, error) {
+func NewSocketMode(config Config) (*SocketMode, error) {
 	var (
 		sc  = &SocketMode{}
 		err error
 	)
-	if sc.slackClient, err = GetSlackClient(); err != nil {
+	if sc.slackClient, err = GetSlackClient(config); err != nil {
 		return nil, err
 	}
 	return sc, nil
@@ -32,21 +32,22 @@ func (sc *SocketMode) Run() error {
 
 	go func() {
 		// See here for event examples: https://github.com/slack-go/slack/blob/master/examples/socketmode/socketmode.go
+	eventLoop:
 		for evt := range socketClient.Events {
 			var err error
 
 			switch evt.Type {
 			case socketmode.EventTypeHello:
-				log.Println("Got Slack Hello")
+				log.Info("Got Slack Hello")
 				continue
 			case socketmode.EventTypeConnecting:
-				log.Println("Connecting to Slack with Socket Mode...")
+				log.Info("Connecting to Slack with Socket Mode...")
 				continue
 			case socketmode.EventTypeConnectionError:
-				log.Fatalln("Connection to Slack failed!")
-				continue
+				log.Error("Connection to Slack failed!")
+				break eventLoop
 			case socketmode.EventTypeConnected:
-				log.Println("Connected to Slack with Socket Mode.")
+				log.Info("Connected to Slack with Socket Mode.")
 				continue
 			case socketmode.EventTypeSlashCommand:
 				continue
@@ -65,7 +66,7 @@ func (sc *SocketMode) Run() error {
 						reactionAdded := innerEvent.Data.(*slackevents.ReactionAddedEvent)
 						timestamp, err = parseTimestamp(reactionAdded.EventTimestamp)
 						if err != nil {
-							continue
+							break
 						}
 						logMessage.WithTime(timestamp).WithFields(log.Fields{
 							"channel":  reactionAdded.Item.Channel,
@@ -78,7 +79,7 @@ func (sc *SocketMode) Run() error {
 						reactionRemoved := innerEvent.Data.(*slackevents.ReactionRemovedEvent)
 						timestamp, err = parseTimestamp(reactionRemoved.EventTimestamp)
 						if err != nil {
-							continue
+							break
 						}
 						logMessage.WithTime(timestamp).WithFields(log.Fields{
 							"channel":  reactionRemoved.Item.Channel,
@@ -91,7 +92,7 @@ func (sc *SocketMode) Run() error {
 						message := innerEvent.Data.(*slackevents.MessageEvent)
 						timestamp, err = parseTimestamp(string(message.EventTimeStamp))
 						if err != nil {
-							continue
+							break
 						}
 
 						text := message.Text
@@ -128,7 +129,6 @@ func (sc *SocketMode) Run() error {
 					default:
 						err = fmt.Errorf("unhandled callback event %+v", eventsAPIEvent)
 					}
-
 				default:
 					err = fmt.Errorf("unhandled events API event %+v", eventsAPIEvent)
 				}
@@ -141,7 +141,7 @@ func (sc *SocketMode) Run() error {
 			}
 
 			if err != nil {
-				logError(err)
+				log.Error("Got an error while handling events: %v", err)
 			}
 		}
 	}()
@@ -156,10 +156,4 @@ func parseTimestamp(timestamp string) (time.Time, error) {
 	}
 	sec, dec := math.Modf(timestampFloat)
 	return time.Unix(int64(sec), int64(dec*(1e9))), nil
-}
-
-func logError(err error) {
-	if err != nil {
-		log.Printf("Got an error while handling events: %v", err)
-	}
 }
