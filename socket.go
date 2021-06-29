@@ -3,11 +3,13 @@ package main
 import (
 	"fmt"
 	"math"
+	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -51,6 +53,8 @@ func NewSocketMode(config Config) (*SocketMode, error) {
 
 func (sc *SocketMode) Run() error {
 	socketClient := socketmode.New(sc.slackClient)
+
+	go startMetrics()
 
 	go func() {
 		// See here for event examples: https://github.com/slack-go/slack/blob/master/examples/socketmode/socketmode.go
@@ -203,4 +207,12 @@ func parseTimestamp(timestamp string) (time.Time, error) {
 	}
 	sec, dec := math.Modf(timestampFloat)
 	return time.Unix(int64(sec), int64(dec*(1e9))), nil
+}
+
+func startMetrics() {
+	log.Println("Exposing metrics on :8080")
+	http.Handle("/metrics", promhttp.Handler())
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Fatalf("http server stopped: %s", err)
+	}
 }
