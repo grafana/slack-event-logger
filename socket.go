@@ -51,7 +51,7 @@ var (
 			Help: "Information about the channel",
 		}, []string{"channel", "name"})
 
-	channelNames map[string]string
+	channelNames map[string]string = map[string]string{}
 )
 
 func NewSocketMode(config Config) (*SocketMode, error) {
