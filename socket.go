@@ -120,9 +120,9 @@ func (sc *SocketMode) Run() error {
 							if err != nil {
 								log.Errorln("Failed to get user info", err)
 							}
-							userNames[message.User] = user.Name
+							userNames[message.User] = user.Profile.DisplayName
 							slack_user_info.
-								WithLabelValues(message.User, user.RealName, user.Name).Set(1)
+								WithLabelValues(message.User, user.RealName, user.Profile.DisplayName).Set(1)
 						}
 
 						text := message.Text
