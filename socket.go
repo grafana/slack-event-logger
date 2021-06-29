@@ -108,17 +108,17 @@ func (sc *SocketMode) Run() error {
 						if channelNames[message.Channel] == "" {
 							channel, err := sc.slackClient.GetConversationInfo(message.Channel, false)
 							if err != nil {
-								log.Errorln("Failed to get channel info", err)
+								log.Errorf("Failed to get channel info for %s: %v", message.User, err)
 							}
 							channelNames[message.Channel] = channel.Name
 							slack_channel_info.
 								WithLabelValues(message.Channel, channel.Name).Set(1)
 						}
 
-						if userNames[message.User] == "" {
+						if message.User != "" && userNames[message.User] == "" {
 							user, err := sc.slackClient.GetUserInfo(message.User)
 							if err != nil {
-								log.Errorln("Failed to get user info", err)
+								log.Errorf("Failed to get user info for %s: %v", message.User, err)
 							}
 							userNames[message.User] = user.Profile.DisplayName
 							slack_user_info.
