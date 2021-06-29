@@ -43,7 +43,7 @@ var (
 		prometheus.GaugeOpts{
 			Name: "slack_thread_seconds",
 			Help: "The amount of seconds between the first and last message of a thread",
-		}, []string{"threadTs"})
+		}, []string{"channel", "threadTs"})
 
 	slack_channel_info = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -188,7 +188,7 @@ func (sc *SocketMode) Run() error {
 									break
 								}
 
-								slack_thread_seconds.WithLabelValues(threadTs).Set(end.Sub(start).Seconds())
+								slack_thread_seconds.WithLabelValues(message.Channel, threadTs).Set(end.Sub(start).Seconds())
 							}
 						}
 						logMessage = logMessage.WithField("messageEvent", messageEvent)
