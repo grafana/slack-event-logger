@@ -2,7 +2,7 @@
 
 IMAGE_NAME ?= slack-event-exporter
 IMAGE_PREFIX ?= us.gcr.io/kubernetes-dev
-IMAGE_TAG ?= 0.0.6
+IMAGE_TAG ?= 0.0.7
 
 build-dev: 
 	go build .

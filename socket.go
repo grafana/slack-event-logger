@@ -37,7 +37,7 @@ var (
 		prometheus.GaugeOpts{
 			Name: "slack_message_reaction_count",
 			Help: "Number of reactions on a single message",
-		}, []string{"channel", "messageTs"})
+		}, []string{"reaction", "user", "channel", "messageTs"})
 
 	slack_thread_seconds = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -110,7 +110,7 @@ func (sc *SocketMode) Run() error {
 						}
 
 						slack_message_reaction_count.
-							WithLabelValues(reactionAdded.Item.Channel, reactionAdded.Item.Timestamp).Inc()
+							WithLabelValues(reactionAdded.Reaction, reactionAdded.User, reactionAdded.Item.Channel, reactionAdded.Item.Timestamp).Inc()
 
 						logMessage.WithTime(timestamp).WithFields(log.Fields{
 							"channel":  reactionAdded.Item.Channel,
@@ -133,7 +133,7 @@ func (sc *SocketMode) Run() error {
 						}).Info()
 
 						slack_message_reaction_count.
-							WithLabelValues(reactionRemoved.Item.Channel, reactionRemoved.Item.Timestamp).Dec()
+							WithLabelValues(reactionRemoved.Reaction, reactionRemoved.User, reactionRemoved.Item.Channel, reactionRemoved.Item.Timestamp).Dec()
 
 					case *slackevents.MessageEvent:
 						message := innerEvent.Data.(*slackevents.MessageEvent)
