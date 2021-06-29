@@ -143,7 +143,7 @@ func (sc *SocketMode) Run() error {
 						}
 
 						if channelNames[message.Channel] == "" {
-							channel, err := sc.slackClient.GetChannelInfo(message.Channel)
+							channel, err := sc.slackClient.GetConversationInfo(message.Channel, false)
 							if err != nil {
 								log.Errorln("Failed to get channel info", err)
 							}
