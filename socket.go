@@ -3,13 +3,9 @@ package main
 import (
 	"fmt"
 	"math"
-	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -17,53 +13,13 @@ import (
 )
 
 type SocketMode struct {
+	config      Config
 	slackClient *slack.Client
 }
 
-var (
-	slack_user_message_count = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "slack_user_message_count",
-			Help: "Number of messages a single User sent to a channel",
-		}, []string{"channel", "user"})
-
-	slack_thread_message_count = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "slack_thread_message_count",
-			Help: "Number of messages in a single thread in a channel",
-		}, []string{"channel", "threadTs"})
-
-	slack_message_reaction_count = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "slack_message_reaction_count",
-			Help: "Number of reactions on a single message",
-		}, []string{"reaction", "user", "channel", "messageTs"})
-
-	slack_thread_seconds = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "slack_thread_seconds",
-			Help: "The amount of seconds between the first and last message of a thread",
-		}, []string{"channel", "threadTs"})
-
-	slack_channel_info = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "slack_channel_info",
-			Help: "Information about the channel",
-		}, []string{"channel", "name"})
-
-	slack_user_info = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "slack_user_info",
-			Help: "Information about the channel",
-		}, []string{"user", "name", "nickname"})
-
-	channelNames map[string]string = map[string]string{}
-	userNames    map[string]string = map[string]string{}
-)
-
 func NewSocketMode(config Config) (*SocketMode, error) {
 	var (
-		sc  = &SocketMode{}
+		sc  = &SocketMode{config: config}
 		err error
 	)
 	if sc.slackClient, err = GetSlackClient(config); err != nil {
@@ -75,7 +31,7 @@ func NewSocketMode(config Config) (*SocketMode, error) {
 func (sc *SocketMode) Run() error {
 	socketClient := socketmode.New(sc.slackClient)
 
-	go startMetrics()
+	go startMetrics(sc.config)
 
 	go func() {
 		// See here for event examples: https://github.com/slack-go/slack/blob/master/examples/socketmode/socketmode.go
@@ -260,12 +216,4 @@ func parseTimestamp(timestamp string) (time.Time, error) {
 	}
 	sec, dec := math.Modf(timestampFloat)
 	return time.Unix(int64(sec), int64(dec*(1e9))), nil
-}
-
-func startMetrics() {
-	log.Println("Exposing metrics on :8080")
-	http.Handle("/metrics", promhttp.Handler())
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		log.Fatalf("http server stopped: %s", err)
-	}
 }
