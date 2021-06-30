@@ -254,18 +254,18 @@ func (sc *SocketMode) reactionEvent(eventTimestamp, channelId, userId, itemTimes
 	sc.addChannelToCache(channelId)
 	sc.addUserToCache(userId)
 
-	if hasEmoji {
-		logMessage = logMessage.WithField("emoji", emojiUnicodes[reactionRemoved.Reaction])
-	}
-
 	if logIt {
-		log.WithTime(timestamp).WithFields(log.Fields{
+		logMessage := log.WithTime(timestamp).WithFields(log.Fields{
 			"event":    event,
 			"channel":  channelId,
 			"user":     userId,
 			"itemTs":   itemTimestamp,
 			"reaction": reaction,
-		}).Info()
+		})
+		if hasEmoji {
+			logMessage = logMessage.WithField("emoji", emojiUnicodes[reaction])
+		}
+		logMessage.Info()
 	}
 
 	slack_message_reaction_count.WithLabelValues(reaction, userId, channelId, itemTimestamp).Add(inc)
