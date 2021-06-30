@@ -308,8 +308,9 @@ func (sc *SocketMode) addReactionToCache(reaction string) bool {
 		return true
 	}
 
+	r := ":" + reaction + ":"
 	// cache standard emojis with unicode ref
-	if unicode, ok := emoji.CodeMap()[reaction]; ok {
+	if unicode, ok := emoji.CodeMap()[r]; ok {
 		emojiUnicodes[reaction] = unicode
 		slack_emoji_info.
 			WithLabelValues(reaction, "", unicode).Set(1)
