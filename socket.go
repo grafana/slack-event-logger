@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/kyokomi/emoji"
 	log "github.com/sirupsen/logrus"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -15,6 +16,7 @@ import (
 type SocketMode struct {
 	config      Config
 	slackClient *slack.Client
+	customEmoji map[string]string
 }
 
 func NewSocketMode(config Config) (*SocketMode, error) {
@@ -25,6 +27,11 @@ func NewSocketMode(config Config) (*SocketMode, error) {
 	if sc.slackClient, err = GetSlackClient(config); err != nil {
 		return nil, err
 	}
+
+	if sc.customEmoji, err = sc.slackClient.GetEmoji(); err != nil {
+		return nil, err
+	}
+
 	return sc, nil
 }
 
@@ -73,16 +80,21 @@ func (sc *SocketMode) Run() error {
 						}
 						sc.addChannelToCache(reactionAdded.Item.Channel)
 						sc.addUserToCache(reactionAdded.User)
+						hasEmoji := sc.addReactionToCache(reactionAdded.Reaction)
 
 						slack_message_reaction_count.
 							WithLabelValues(reactionAdded.Reaction, reactionAdded.User, reactionAdded.Item.Channel, reactionAdded.Item.Timestamp).Inc()
 
-						logMessage.WithTime(timestamp).WithFields(log.Fields{
+						logMessage = logMessage.WithTime(timestamp).WithFields(log.Fields{
 							"channel":  reactionAdded.Item.Channel,
 							"user":     reactionAdded.User,
 							"itemTs":   reactionAdded.Item.Timestamp,
 							"reaction": reactionAdded.Reaction,
-						}).Info()
+						})
+						if hasEmoji {
+							logMessage = logMessage.WithField("emoji", emojiUnicodes[reactionAdded.Reaction])
+						}
+						logMessage.Info()
 
 					case *slackevents.ReactionRemovedEvent:
 						reactionRemoved := innerEvent.Data.(*slackevents.ReactionRemovedEvent)
@@ -92,16 +104,22 @@ func (sc *SocketMode) Run() error {
 						}
 						sc.addChannelToCache(reactionRemoved.Item.Channel)
 						sc.addUserToCache(reactionRemoved.User)
+						hasEmoji := sc.addReactionToCache(reactionRemoved.Reaction)
+
+						slack_message_reaction_count.
+							WithLabelValues(reactionRemoved.Reaction, reactionRemoved.User, reactionRemoved.Item.Channel, reactionRemoved.Item.Timestamp).Dec()
 
 						logMessage.WithTime(timestamp).WithFields(log.Fields{
 							"channel":  reactionRemoved.Item.Channel,
 							"user":     reactionRemoved.User,
 							"itemTs":   reactionRemoved.Item.Timestamp,
 							"reaction": reactionRemoved.Reaction,
-						}).Info()
-
-						slack_message_reaction_count.
-							WithLabelValues(reactionRemoved.Reaction, reactionRemoved.User, reactionRemoved.Item.Channel, reactionRemoved.Item.Timestamp).Dec()
+							"emoji":    emojiUnicodes[reactionRemoved.Reaction],
+						})
+						if hasEmoji {
+							logMessage = logMessage.WithField("emoji", emojiUnicodes[reactionRemoved.Reaction])
+						}
+						logMessage.Info()
 
 					case *slackevents.MessageEvent:
 						message := innerEvent.Data.(*slackevents.MessageEvent)
@@ -221,6 +239,33 @@ func (sc *SocketMode) addUserToCache(userId string) {
 	userNames[userId] = user.Profile.DisplayName
 	slack_user_info.
 		WithLabelValues(userId, user.Name, user.RealName, user.Profile.DisplayName).Set(1)
+}
+
+func (sc *SocketMode) addReactionToCache(reaction string) bool {
+	if reaction == "" {
+		return false
+	}
+
+	if emojiUnicodes[reaction] != "" {
+		return true
+	}
+
+	// cache standard emojis with unicode ref
+	if unicode, ok := emoji.CodeMap()[reaction]; ok {
+		emojiUnicodes[reaction] = unicode
+		slack_emoji_info.
+			WithLabelValues(reaction, "", unicode).Set(1)
+		return true
+	}
+
+	// cache custom emojis with URL ref
+	if url, ok := sc.customEmoji[reaction]; ok {
+		emojiUnicodes[reaction] = url
+		slack_emoji_info.
+			WithLabelValues(reaction, url, "").Set(1)
+		return true
+	}
+	return false
 }
 
 func parseTimestamp(timestamp string) (time.Time, error) {

@@ -48,8 +48,15 @@ var (
 			Help: "Information about the channel",
 		}, []string{"user", "name", "realname", "displayname"})
 
-	channelNames map[string]string = map[string]string{}
-	userNames    map[string]string = map[string]string{}
+	slack_emoji_info = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "slack_emoji_info",
+			Help: "Information about emoji",
+		}, []string{"reaction", "url", "unicode"})
+
+	channelNames  map[string]string = map[string]string{}
+	userNames     map[string]string = map[string]string{}
+	emojiUnicodes map[string]string = map[string]string{}
 )
 
 func startMetrics(config Config) {
