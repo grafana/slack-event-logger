@@ -13,6 +13,12 @@ import (
 	"github.com/slack-go/slack/socketmode"
 )
 
+const (
+	messageAdded    = "message_added"
+	messagedDeleted = "message_deleted"
+	messagedEdited  = "message_edited"
+)
+
 type SocketMode struct {
 	config      Config
 	slackClient *slack.Client
@@ -37,6 +43,10 @@ func NewSocketMode(config Config) (*SocketMode, error) {
 
 func (sc *SocketMode) Run() error {
 	socketClient := socketmode.New(sc.slackClient)
+
+	if err := sc.init(); err != nil {
+		return fmt.Errorf("got an error on init: %w", err)
+	}
 
 	go startMetrics(sc.config)
 
@@ -68,129 +78,41 @@ func (sc *SocketMode) Run() error {
 				switch eventsAPIEvent.Type {
 				case slackevents.CallbackEvent:
 					innerEvent := eventsAPIEvent.InnerEvent
-					logMessage := log.WithField("event", innerEvent.Type)
-					var timestamp time.Time
 
 					switch innerEvent.Data.(type) {
 					case *slackevents.ReactionAddedEvent:
 						reactionAdded := innerEvent.Data.(*slackevents.ReactionAddedEvent)
-						timestamp, err = parseTimestamp(reactionAdded.EventTimestamp)
-						if err != nil {
-							break
-						}
-						sc.addChannelToCache(reactionAdded.Item.Channel)
-						sc.addUserToCache(reactionAdded.User)
-						hasEmoji := sc.addReactionToCache(reactionAdded.Reaction)
-
-						slack_message_reaction_count.
-							WithLabelValues(reactionAdded.Reaction, reactionAdded.User, reactionAdded.Item.Channel, reactionAdded.Item.Timestamp).Inc()
-
-						logMessage = logMessage.WithTime(timestamp).WithFields(log.Fields{
-							"channel":  reactionAdded.Item.Channel,
-							"user":     reactionAdded.User,
-							"itemTs":   reactionAdded.Item.Timestamp,
-							"reaction": reactionAdded.Reaction,
-						})
-						if hasEmoji {
-							logMessage = logMessage.WithField("emoji", emojiUnicodes[reactionAdded.Reaction])
-						}
-						logMessage.Info()
+						err = sc.reactionEvent(reactionAdded.EventTimestamp, reactionAdded.Item.Channel, reactionAdded.User, reactionAdded.Item.Timestamp, reactionAdded.Reaction, true, true)
 
 					case *slackevents.ReactionRemovedEvent:
 						reactionRemoved := innerEvent.Data.(*slackevents.ReactionRemovedEvent)
-						timestamp, err = parseTimestamp(reactionRemoved.EventTimestamp)
-						if err != nil {
-							break
-						}
-						sc.addChannelToCache(reactionRemoved.Item.Channel)
-						sc.addUserToCache(reactionRemoved.User)
-						hasEmoji := sc.addReactionToCache(reactionRemoved.Reaction)
-
-						slack_message_reaction_count.
-							WithLabelValues(reactionRemoved.Reaction, reactionRemoved.User, reactionRemoved.Item.Channel, reactionRemoved.Item.Timestamp).Dec()
-
-						logMessage.WithTime(timestamp).WithFields(log.Fields{
-							"channel":  reactionRemoved.Item.Channel,
-							"user":     reactionRemoved.User,
-							"itemTs":   reactionRemoved.Item.Timestamp,
-							"reaction": reactionRemoved.Reaction,
-							"emoji":    emojiUnicodes[reactionRemoved.Reaction],
-						})
-						if hasEmoji {
-							logMessage = logMessage.WithField("emoji", emojiUnicodes[reactionRemoved.Reaction])
-						}
-						logMessage.Info()
+						err = sc.reactionEvent(reactionRemoved.EventTimestamp, reactionRemoved.Item.Channel, reactionRemoved.User, reactionRemoved.Item.Timestamp, reactionRemoved.Reaction, false, true)
 
 					case *slackevents.MessageEvent:
 						message := innerEvent.Data.(*slackevents.MessageEvent)
-						timestamp, err = parseTimestamp(string(message.EventTimeStamp))
-						if err != nil {
-							break
-						}
-						sc.addChannelToCache(message.Channel)
-						sc.addUserToCache(message.User)
 
+						event := "message_added"
 						text := message.Text
-
-						logMessage = logMessage.WithTime(timestamp).WithFields(log.Fields{
-							"messageId": message.ClientMsgID,
-							"channel":   message.Channel,
-							"user":      message.User,
-							"messageTs": message.TimeStamp,
-						})
-
-						messageEvent := "new"
 						threadTs := message.ThreadTimeStamp
+						user := message.User
+						messageId := message.ClientMsgID
 						if previous := message.PreviousMessage; previous != nil {
 							new := message.Message
-							logMessage = logMessage.WithFields(log.Fields{"user": previous.User, "messageId": previous.ClientMsgID})
+							user = previous.User
+							messageId = previous.ClientMsgID
 							if new == nil || new.SubType == "tombstone" { // lol
-								messageEvent = "deleted"
+								event = "message_deleted"
 							} else {
-								messageEvent = "edited"
+								event = "message_edited"
 								text = new.Text
 							}
-						} else {
+						} else if threadTs == "" {
 							// If the thread timestamp is empty on a new message, this is a top level message
 							// This is essentially a thread without replies (at this point), we can set the threadTs
-							if threadTs == "" {
-								threadTs = message.TimeStamp
-							} else {
-								var start, end time.Time
-								start, err = parseTimestamp(threadTs)
-								if err != nil {
-									break
-								}
-								end, err = parseTimestamp(message.TimeStamp)
-								if err != nil {
-									break
-								}
-
-								slack_thread_seconds.WithLabelValues(message.Channel, threadTs).Set(end.Sub(start).Seconds())
-							}
-						}
-						logMessage = logMessage.WithField("messageEvent", messageEvent)
-						logMessage = logMessage.WithField("threadTs", threadTs)
-
-						switch messageEvent {
-						case "edited":
-							continue
-						case "deleted":
-							slack_user_message_count.
-								WithLabelValues(message.Channel, message.User).Dec()
-
-							slack_thread_message_count.
-								WithLabelValues(message.Channel, threadTs).Dec()
-						default:
-							slack_user_message_count.
-								WithLabelValues(message.Channel, message.User).Inc()
-
-							slack_thread_message_count.
-								WithLabelValues(message.Channel, threadTs).Inc()
+							threadTs = message.TimeStamp
 						}
 
-						logMessage.Info(text)
-
+						sc.messageEvent(event, message.EventTimeStamp.String(), message.Channel, user, messageId, message.TimeStamp, threadTs, text, true)
 					default:
 						err = fmt.Errorf("unhandled callback event %+v", eventsAPIEvent)
 					}
@@ -212,6 +134,142 @@ func (sc *SocketMode) Run() error {
 	}()
 
 	return socketClient.Run()
+}
+
+func (sc *SocketMode) init() error {
+	backfillRange, channels := sc.config.Slack.BackfillTimeRange, sc.config.Slack.Channels
+	if backfillRange == 0 {
+		log.Info("Not backfilling Slack, no time range given")
+		return nil
+	}
+	if len(channels) == 0 {
+		log.Info("Not backfilling Slack, no channels given")
+		return nil
+	}
+
+	for _, channel := range sc.config.Slack.Channels {
+		messages, err := GetConversations(sc.slackClient, channel, backfillRange)
+		if err != nil {
+			return err
+		}
+		for i, topLevelMessage := range messages {
+			if i%50 == 0 {
+				log.Infof("Backfilling conversations for channel %s (%d/%d)", channel, i, len(messages))
+			}
+			var threadMessages []slack.Message
+			if topLevelMessage.ReplyCount > 0 {
+				if threadMessages, err = GetConversationReplies(sc.slackClient, channel, topLevelMessage.ThreadTimestamp); err != nil {
+					return err
+				}
+			} else {
+				threadMessages = []slack.Message{topLevelMessage}
+			}
+
+			for _, message := range threadMessages {
+				threadTs := message.ThreadTimestamp
+				if threadTs == "" {
+					threadTs = message.Timestamp
+				}
+				if err = sc.messageEvent(messageAdded, message.Timestamp, channel, message.User, message.ClientMsgID, message.Timestamp, threadTs, message.Text, false); err != nil {
+					return err
+				}
+				for _, reaction := range message.Reactions {
+					for _, user := range reaction.Users {
+						if err = sc.reactionEvent(message.Timestamp, channel, user, message.Timestamp, reaction.Name, true, false); err != nil {
+							return err
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (sc *SocketMode) messageEvent(event, eventTimestamp, channelId, userId, messageId, messageTs, threadTs, text string, logIt bool) error {
+	timestamp, err := parseTimestamp(eventTimestamp)
+	if err != nil {
+		return err
+	}
+	sc.addChannelToCache(channelId)
+	sc.addUserToCache(userId)
+
+	// Register thread durations
+	if threadTs != messageTs {
+		var start, end time.Time
+		if start, err = parseTimestamp(threadTs); err != nil {
+			return err
+		}
+		if end, err = parseTimestamp(messageTs); err != nil {
+			return err
+		}
+
+		slack_thread_seconds.WithLabelValues(channelId, threadTs).Set(end.Sub(start).Seconds())
+	}
+
+	switch event {
+	case messagedEdited:
+		break
+	case messagedDeleted:
+		slack_user_message_count.
+			WithLabelValues(channelId, userId).Dec()
+
+		slack_thread_message_count.
+			WithLabelValues(channelId, threadTs).Dec()
+	default:
+		slack_user_message_count.
+			WithLabelValues(channelId, userId).Inc()
+
+		slack_thread_message_count.
+			WithLabelValues(channelId, threadTs).Inc()
+	}
+
+	if logIt {
+		log.WithTime(timestamp).WithFields(log.Fields{
+			"event":     event,
+			"messageId": messageId,
+			"channel":   channelId,
+			"user":      userId,
+			"messageTs": messageTs,
+			"threadTs":  threadTs,
+		}).Info()
+	}
+
+	return nil
+}
+
+func (sc *SocketMode) reactionEvent(eventTimestamp, channelId, userId, itemTimestamp, reaction string, added bool, logIt bool) error {
+	event := "reaction_added"
+	var inc float64 = 1
+	if !added {
+		event = "reaction_removed"
+		inc = -1
+	}
+	timestamp, err := parseTimestamp(eventTimestamp)
+	if err != nil {
+		return err
+	}
+	hasEmoji := sc.addReactionToCache(reaction)
+	sc.addChannelToCache(channelId)
+	sc.addUserToCache(userId)
+
+	if hasEmoji {
+		logMessage = logMessage.WithField("emoji", emojiUnicodes[reactionRemoved.Reaction])
+	}
+
+	if logIt {
+		log.WithTime(timestamp).WithFields(log.Fields{
+			"event":    event,
+			"channel":  channelId,
+			"user":     userId,
+			"itemTs":   itemTimestamp,
+			"reaction": reaction,
+		}).Info()
+	}
+
+	slack_message_reaction_count.WithLabelValues(reaction, userId, channelId, itemTimestamp).Add(inc)
+	return nil
 }
 
 func (sc *SocketMode) addChannelToCache(channelId string) {

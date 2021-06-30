@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/kelseyhightower/envconfig"
 )
 
@@ -13,6 +15,9 @@ type (
 		Slack struct {
 			AppToken string `envconfig:"SLACK_APP_TOKEN"`
 			BotToken string `envconfig:"SLACK_BOT_TOKEN"`
+
+			BackfillTimeRange time.Duration `envconfig:"SLACK_BACKFILL_TIME_RANGE"`
+			Channels          []string      `envconfig:"SLACK_CHANNELS"`
 		}
 	}
 )
